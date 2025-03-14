@@ -27,6 +27,11 @@ pub enum Meta {
     Skip,
     /// TODO make it Option<Box<Doc>>
     CustomUsage(Box<Meta>, Box<Doc>),
+    CustomHelp {
+        inner: Box<Meta>,
+        arg: Box<Doc>,
+        help: Option<Box<Doc>>,
+    },
     /// this meta must be prefixed with -- in unsage group
     Strict(Box<Meta>),
 }
@@ -125,7 +130,8 @@ impl Meta {
                 | Meta::CustomUsage(m, _)
                 | Meta::Subsection(m, _)
                 | Meta::Strict(m)
-                | Meta::Suffix(m, _) => go(m, is_pos, v),
+                | Meta::Suffix(m, _)
+                | Meta::CustomHelp { inner: m, .. } => go(m, is_pos, v),
                 Meta::Skip => {}
             }
         }
@@ -166,7 +172,8 @@ impl Meta {
             | Meta::Many(x)
             | Meta::Subsection(x, _)
             | Meta::Suffix(x, _)
-            | Meta::CustomUsage(x, _) => Self::first_item(x),
+            | Meta::CustomUsage(x, _)
+            | Meta::CustomHelp { inner: x, .. } => Self::first_item(x),
         }
     }
 
@@ -285,6 +292,10 @@ impl Meta {
                     *self = std::mem::take(m);
                 }
             }
+            Meta::CustomHelp { inner: m, .. } => {
+                m.normalize(for_usage, norm);
+                *self = std::mem::take(m);
+            }
             Meta::Strict(m) => {
                 m.normalize(for_usage, norm);
                 norm.push();
@@ -342,7 +353,8 @@ impl Meta {
             | Meta::Adjacent(m)
             | Meta::Subsection(m, _)
             | Meta::Suffix(m, _)
-            | Meta::Many(m) => {
+            | Meta::Many(m)
+            | Meta::CustomHelp { inner: m, .. } => {
                 m.collect_shorts(flags, args);
             }
             Meta::Skip | Meta::Strict(_) => {}

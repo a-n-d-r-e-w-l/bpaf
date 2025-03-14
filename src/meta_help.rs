@@ -11,7 +11,7 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 pub struct Metavar(pub(crate) &'static str);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) enum HelpItem<'a> {
     DecorSuffix {
         help: &'a Doc,
@@ -59,6 +59,11 @@ pub(crate) enum HelpItem<'a> {
     AnywhereStop {
         ty: HiTy,
     },
+    Custom {
+        inner: HelpItems<'a>,
+        arg: &'a Doc,
+        help: Option<&'a Doc>,
+    },
 }
 impl HelpItem<'_> {
     fn has_help(&self) -> bool {
@@ -67,7 +72,8 @@ impl HelpItem<'_> {
             | HelpItem::Command { help, .. }
             | HelpItem::Flag { help, .. }
             | HelpItem::Any { help, .. }
-            | HelpItem::Argument { help, .. } => help.is_some(),
+            | HelpItem::Argument { help, .. }
+            | HelpItem::Custom { help, .. } => help.is_some(),
             HelpItem::GroupStart { .. } | HelpItem::DecorSuffix { .. } => true,
             HelpItem::GroupEnd { .. }
             | HelpItem::AnywhereStart { .. }
@@ -89,12 +95,13 @@ impl HelpItem<'_> {
             HelpItem::Command { .. } => HiTy::Command,
             HelpItem::Any { anywhere: true, .. }
             | HelpItem::Flag { .. }
-            | HelpItem::Argument { .. } => HiTy::Flag,
+            | HelpItem::Argument { .. }
+            | HelpItem::Custom { .. } => HiTy::Flag,
         }
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 /// A collection of all the help items separated into flags, positionals and commands
 ///
 /// Items are stored as references and can be trivially copied
@@ -148,7 +155,8 @@ impl<'a, 'b> Iterator for HelpItemsIter<'a, 'b> {
                 | HelpItem::Command { .. }
                 | HelpItem::Positional { .. }
                 | HelpItem::Flag { .. }
-                | HelpItem::Argument { .. } => {
+                | HelpItem::Argument { .. }
+                | HelpItem::Custom { .. } => {
                     let ty = item.ty();
                     match self.block {
                         ItemBlock::No => ty == self.target,
@@ -187,7 +195,8 @@ impl Meta {
             | Meta::Subsection(x, _)
             | Meta::Suffix(x, _)
             | Meta::Strict(x)
-            | Meta::CustomUsage(x, _) => x.peek_front_ty(),
+            | Meta::CustomUsage(x, _)
+            | Meta::CustomHelp { inner: x, .. } => x.peek_front_ty(),
             Meta::Item(i) => Some(HiTy::from(i.as_ref())),
             Meta::Skip => None,
         }
@@ -241,6 +250,17 @@ impl<'a> HelpItems<'a> {
                         go(hi, m, no_ss);
                         hi.items.push(HelpItem::DecorSuffix { help, ty });
                     }
+                }
+                Meta::CustomHelp { inner, arg, help } => {
+                    hi.items.push(HelpItem::Custom {
+                        inner: {
+                            let mut items = HelpItems::default();
+                            items.append_meta(inner);
+                            items
+                        },
+                        arg,
+                        help: help.as_deref(),
+                    });
                 }
                 Meta::Skip => (),
             }
@@ -497,6 +517,20 @@ fn write_help_item(buf: &mut Doc, item: &HelpItem, include_env: bool) {
             buf.token(Token::BlockStart(Block::Block));
             buf.token(Token::BlockEnd(Block::Block));
         }
+        HelpItem::Custom {
+            inner: _,
+            arg,
+            help,
+        } => {
+            buf.token(Token::BlockStart(Block::ItemTerm));
+            buf.doc(arg);
+            buf.token(Token::BlockEnd(Block::ItemTerm));
+            if let Some(help) = help {
+                buf.token(Token::BlockStart(Block::ItemBody));
+                buf.doc(help);
+                buf.token(Token::BlockEnd(Block::ItemBody));
+            }
+        }
     }
 }
 
@@ -612,6 +646,10 @@ impl Dedup {
                 self.keep = self
                     .items
                     .insert(format!("{:?} {} {:?}", name, metavar.0, help));
+                self.keep
+            }
+            HelpItem::Custom { inner, arg, help } => {
+                self.keep = self.items.insert(format!("{:?} {:?}", arg, help));
                 self.keep
             }
         }

@@ -228,6 +228,9 @@ impl Doc {
                 Meta::CustomUsage(_, u) => {
                     f.doc(u);
                 }
+                Meta::CustomHelp { .. } => {
+                    unreachable!() // Meta::normalize - which is always called before this - replaces `Meta::CustomHelp {inner, ..}` with `inner`
+                }
                 Meta::Strict(m) => {
                     f.write_str("--", Style::Literal);
                     f.write_str(" ", Style::Text);

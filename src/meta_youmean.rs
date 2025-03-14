@@ -55,7 +55,8 @@ pub(crate) fn suggest(args: &State, meta: &Meta) -> Option<(usize, Suggestion)> 
 
     let mut nest = None;
 
-    for item in &hi.items {
+    let mut items_to_check = hi.items.iter().collect::<Vec<_>>();
+    while let Some(item) = items_to_check.pop() {
         match item {
             HelpItem::Command { name, meta, .. } => {
                 // command can result in 2 types of suggestions:
@@ -67,7 +68,8 @@ pub(crate) fn suggest(args: &State, meta: &Meta) -> Option<(usize, Suggestion)> 
                 // scan nested items and look for exact matches only
                 nested.items.clear();
                 nested.append_meta(meta);
-                for item in &nested.items {
+                let mut items_to_check = nested.items.iter().collect::<Vec<_>>();
+                while let Some(item) = items_to_check.pop() {
                     match item {
                         HelpItem::Command { name: nname, .. } => {
                             if *nname == actual {
@@ -87,6 +89,7 @@ pub(crate) fn suggest(args: &State, meta: &Meta) -> Option<(usize, Suggestion)> 
                         | HelpItem::AnywhereStart { .. }
                         | HelpItem::AnywhereStop { .. }
                         | HelpItem::Any { .. } => {}
+                        HelpItem::Custom { inner, .. } => items_to_check.extend(&inner.items),
                     }
                 }
             }
@@ -111,6 +114,7 @@ pub(crate) fn suggest(args: &State, meta: &Meta) -> Option<(usize, Suggestion)> 
             | HelpItem::AnywhereStart { .. }
             | HelpItem::AnywhereStop { .. }
             | HelpItem::Any { .. } => {}
+            HelpItem::Custom { inner, .. } => items_to_check.extend(&inner.items),
         }
     }
 
